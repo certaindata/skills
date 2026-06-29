@@ -69,7 +69,7 @@ This installs the skill into every detected agent platform on your machine simul
 
 Download `SKILL.md` from either location and place it in your agent platform's skills directory. Refer to your agent platform's documentation for the correct path.
 
-- [github.com/certaindata/skills](https://github.com/certaindata/skills) (in the `certaindata/` folder)
+- [github.com/certaindata/skills](https://github.com/certaindata/skills) (in the `skills/certaindata/` folder)
 - [certaindata.ai/for-agents](https://www.certaindata.ai/for-agents)
 
 **Verify it works:**
