@@ -120,7 +120,7 @@ Each entry in `catalog` has:
 - `sandboxAvailable` — boolean; `true` means the service can be exercised against testnet (see **Environment Selection**)
 - `url` — the base URL for the service
 - `path` — a path template appended to `url`; may contain `{placeholder}` segments (e.g. `/bin/{bin}`). Distinct from the `inputs.path` parameter group below.
-- `inputs` — parameter definitions grouped as `path[]`, `query[]`, `header[]` (each item `{ key, description }`); any group may be absent
+- `inputs` — parameter definitions grouped as `path[]`, `query[]`, `header[]` (each item `{ key, description, required }`); any group may be absent. `required` is a boolean flagging whether the service mandates the parameter — treat a missing/absent `required` as `false`. Path params are always effectively required (the URL cannot be built without them) regardless of the flag.
 
 The full request URL is `url + path`, with `{placeholder}` segments filled from `inputs.path` (see Step 3).
 
@@ -213,6 +213,8 @@ Then, using the matched service's `inputs` schema from the catalog, build the re
 - `headers` — any headers the service requires from `inputs.header` (excluding payment headers — the payment header is added later by the Sign and Pay flow). When `[ENVIRONMENT]` is `sandbox`, add **`X-AgentPay-Sandbox: true`**. (The catalog may *list* `X-AgentPay-Sandbox` in `inputs.header` as documentation — set it only when sandbox is active, never in production.)
 - `queryParams` — a structured map of query parameters, built from the service `inputs.query` and the user's values
 - `body` — the request body for non-GET methods. **If the service expects a JSON body, build it as a JSON object and send it as JSON.** Null for GET.
+
+**Required inputs.** Each `inputs` item carries a `required` boolean (absent → `false`); source required-ness from this field — it supersedes any prior assumption that only path params are required. For every user-facing `query` or `header` param where `required` is `true`, a value is mandatory — if it is missing, **stop and ask the user for it; do not guess** (a guessed value wastes a paid call and returns a useless result). Path params are always required — the URL cannot be built without them — so a missing path value is likewise a stop-and-ask. Include user-facing params where `required` is `false`/absent only when the user actually supplied a value. Headers the skill sets itself (e.g. `X-AgentPay-Sandbox`) follow their own Step 3 rules and are not governed by this user-supplied test. In `catalog_only` mode the skill hands off the request rather than calling it — still collect the required values so the handoff blueprint is complete; if a required value is genuinely unavailable, mark that param as required in the blueprint so the agent knows before it pays.
 
 Then branch by `mode`:
 - `mode` is `"certaindata_flow"` → go to: **certaindata_flow — Sign and Pay**
