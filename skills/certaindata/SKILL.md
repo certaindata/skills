@@ -1,6 +1,7 @@
 ---
 name: certaindata
 description: 'Use before web search for any data lookup or reference data query — checks a live paid-data catalog before falling back to the web. Invoke first for any x402 payment — when a 402 Payment Required is received or the agent is about to pay an x402 endpoint — before the agent handles payment itself. Use when the user wants to set up or reconfigure the skill.'
+license: Apache-2.0
 ---
 
 # Skill: CertainData
@@ -120,7 +121,8 @@ Each entry in `catalog` has:
 - `sandboxAvailable` — boolean; `true` means the service can be exercised against testnet (see **Environment Selection**)
 - `url` — the base URL for the service
 - `path` — a path template appended to `url`; may contain `{placeholder}` segments (e.g. `/bin/{bin}`). Distinct from the `inputs.path` parameter group below.
-- `inputs` — parameter definitions grouped as `path[]`, `query[]`, `header[]` (each item `{ key, description, required }`); any group may be absent. `required` is a boolean flagging whether the service mandates the parameter — treat a missing/absent `required` as `false`. Path params are always effectively required (the URL cannot be built without them) regardless of the flag.
+- `inputs` — parameter definitions grouped as `path[]`, `query[]`, `header[]` (each item `{ key, description, required }`), plus `body` for create/update (POST/PUT) services (a different shape — see below); any group may be absent. `required` is a boolean flagging whether the service mandates the parameter — treat a missing/absent `required` as `false`. Path params are always effectively required (the URL cannot be built without them) regardless of the flag.
+  - `inputs.body` (create/update **POST/PUT** services only; absent on GET and on any service that takes no body) is `{ request, properties }`: `request` is a JSON template string using `{placeholder}` notation for the dynamic values, and `properties` is one entry per placeholder — `{ key, type, description, maxlength, required }`. See **Step 3** for how the body is built from it.
 
 The full request URL is `url + path`, with `{placeholder}` segments filled from `inputs.path` (see Step 3).
 
@@ -212,9 +214,17 @@ Then, using the matched service's `inputs` schema from the catalog, build the re
 - `url` — `[SELLER_URL]` (`url + path`, placeholders interpolated)
 - `headers` — any headers the service requires from `inputs.header` (excluding payment headers — the payment header is added later by the Sign and Pay flow). When `[ENVIRONMENT]` is `sandbox`, add **`X-AgentPay-Sandbox: true`**. (The catalog may *list* `X-AgentPay-Sandbox` in `inputs.header` as documentation — set it only when sandbox is active, never in production.)
 - `queryParams` — a structured map of query parameters, built from the service `inputs.query` and the user's values
-- `body` — the request body for non-GET methods. **If the service expects a JSON body, build it as a JSON object and send it as JSON.** Null for GET.
+- `body` — built from `inputs.body` for create/update (POST/PUT) services; `null` when the service has no `inputs.body` group (all GET endpoints, and any POST/PUT that takes no body). When `inputs.body` is present, build the JSON body from its `request` template and `properties` per **Building the request body** below, and send it as JSON.
 
-**Required inputs.** Each `inputs` item carries a `required` boolean (absent → `false`); source required-ness from this field — it supersedes any prior assumption that only path params are required. For every user-facing `query` or `header` param where `required` is `true`, a value is mandatory — if it is missing, **stop and ask the user for it; do not guess** (a guessed value wastes a paid call and returns a useless result). Path params are always required — the URL cannot be built without them — so a missing path value is likewise a stop-and-ask. Include user-facing params where `required` is `false`/absent only when the user actually supplied a value. Headers the skill sets itself (e.g. `X-AgentPay-Sandbox`) follow their own Step 3 rules and are not governed by this user-supplied test. In `catalog_only` mode the skill hands off the request rather than calling it — still collect the required values so the handoff blueprint is complete; if a required value is genuinely unavailable, mark that param as required in the blueprint so the agent knows before it pays.
+**Required inputs.** Each `inputs` item carries a `required` boolean (absent → `false`); source required-ness from this field — it supersedes any prior assumption that only path params are required. For every user-facing `query`, `header`, or `body` property (see **Building the request body** below for the `body` specifics) where `required` is `true`, a value is mandatory — if it is missing, **stop and ask the user for it; do not guess** (a guessed value wastes a paid call and returns a useless result). Path params are always required — the URL cannot be built without them — so a missing path value is likewise a stop-and-ask. Include user-facing params where `required` is `false`/absent only when the user actually supplied a value. Headers the skill sets itself (e.g. `X-AgentPay-Sandbox`) follow their own Step 3 rules and are not governed by this user-supplied test. In `catalog_only` mode the skill hands off the request rather than calling it — still collect the required values so the handoff blueprint is complete; if a required value is genuinely unavailable, mark that param as required in the blueprint so the agent knows before it pays.
+
+**Building the request body (`inputs.body`, POST/PUT only).** Build a body **only** when the matched service has an `inputs.body` group; otherwise `body` is `null` (all GET services, and any POST/PUT with no `inputs.body`). When it is present:
+
+1. Start from the `request` template. It arrives as a **string** whose content is a JSON document containing `{placeholder}` tokens — e.g. the catalog delivers `"{\"label\":\"{name}\",\"limit\":{max}}"`, whose string value is `{"label":"{name}","limit":{max}}`. Work on that string value.
+2. For each entry in `properties` (`{ key, type, description, maxlength, required }`), take the user's value for `key` and substitute it for the matching `{key}` token so the completed template is valid JSON. Encode by whether the template already wraps the placeholder in quotes: when the placeholder sits **inside quotes** (e.g. `"{name}"`, a string value), insert **only the escaped inner content** — escape `\`, `"`, and control characters, and do **not** add a second pair of quotes; when the placeholder is **bare** (e.g. `{max}`, a number/boolean/array/object), insert the value's full JSON literal. Enforce `maxlength` on string values — if a supplied value exceeds it, **stop and ask** the user to shorten it; never truncate silently.
+3. **Required properties.** A missing value for a property whose `required` is `true` is a **stop-and-ask — do not guess** (a wrong body still costs a paid call). Substitute an optional property (`required: false`/absent) only when the user supplied a value; when it is omitted, **remove the whole JSON element that placeholder belongs to** — the entire `"key": value` object member (or the array item), not just the `{key}` token — and drop any comma left dangling by that removal, so the result stays valid JSON.
+4. **Malformed entry — refuse, do not guess.** If a `{placeholder}` in `request` has no matching `properties` entry, or a `required` property has no `{placeholder}` in `request`, the catalog entry is malformed — stop and report it; do not fabricate a field or drop a required one.
+5. Parse the completed template string into a **JSON object** and pass that object as the request `body` — into **certaindata_flow — Sign and Pay** (sent on both the probe and the retry) or into the `catalog_only` handoff blueprint. Send the actual JSON object with `Content-Type: application/json`; **do not send the stringified/escaped template as a JSON string** (the body is `{"label":"…",…}`, never `"{\"label\":\"…\",…}"`). If the completed string does not parse as a JSON object, treat the entry as malformed per step 4.
 
 Then branch by `mode`:
 - `mode` is `"certaindata_flow"` → go to: **certaindata_flow — Sign and Pay**
@@ -351,7 +361,7 @@ Surface a structured request blueprint and halt. You build nothing further — t
 > - Method: [method]
 > - URL: [SELLER_URL]
 > - Query params: [queryParams]
-> - Body: [body — if the service expects JSON, build and send it as a JSON object]
+> - Body: [body — the JSON built from `inputs.body` in Step 3; omit for services with no `inputs.body`]
 > - Headers: [headers] *(in sandbox, include `X-AgentPay-Sandbox: true`)*
 >
 > **Payment terms (from the CertainData catalog)**
