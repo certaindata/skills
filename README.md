@@ -207,6 +207,16 @@ In `certaindata_flow` mode the skill calls the endpoint, has CertainData sign th
 
 ---
 
+## Security
+
+The skill is **non-custodial and instruction-only**: it never signs payments and never holds your funds. **Your CertainData wallet is non-custodial — you keep custody of the private key, and neither the skill nor CertainData's backend can access it.** CertainData is granted only a scoped signing delegation: it can authorize a payment within the spend caps and allow/deny lists you've defined on your CertainData account, and the signature is produced without your key ever being shared with CertainData.
+
+Automated skill scanners rate the skill as elevated risk — for the deliberate capabilities it needs (reading an API credential, calling external endpoints, initiating payments), not a vulnerability, undocumented endpoint, or malicious code.
+
+See **[SECURITY.md](SECURITY.md)** for the full security model — credential handling, the trust boundary, payment controls, the "what this skill does not do" list, and how to report a vulnerability.
+
+---
+
 ## Troubleshooting
 
 **The skill doesn't run / nothing happens.** It may not be loaded. Re-install (`npx skills add certaindata/skills --skill certaindata`) or reload your agent, confirm `SKILL.md` is in your platform's skills directory, then try a quick lookup again.
@@ -224,3 +234,9 @@ In `certaindata_flow` mode the skill calls the endpoint, has CertainData sign th
 - **Portal & account management:** [portal.certaindata.ai](https://portal.certaindata.ai)
 - **Contact:** [certaindata.ai/contact](https://www.certaindata.ai/contact)
 - **Email:** support@certaindata.ai
+
+---
+
+## License
+
+Licensed under the Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). Use of the CertainData services accessed by this skill is governed by the [CertainData Terms](https://www.certaindata.ai/terms).
