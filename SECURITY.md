@@ -15,6 +15,8 @@ capabilities; the sections below are the intended mitigations for them.
 
 ## Credential handling
 
+_Addresses security-scan finding W007 (credential handling)._
+
 The skill reads a CertainData API key to authorize delegated signing. Its handling is
 deliberately constrained:
 
@@ -24,14 +26,27 @@ deliberately constrained:
 - **Never emitted.** The key value is used only to build the `Authorization` header for a
   request to CertainData. It is **never printed, echoed, logged, or written back** to any
   file, prompt, or tool output.
+- **Passed by reference where possible.** On agent platforms that support env-var
+  substitution AND when the key was resolved from the environment variable, the
+  `Authorization` header is sent as `Bearer ${<env_var>}`, so the raw key is resolved at
+  send time and never enters the model's generated output. If the key was resolved from
+  `secret.env_file` (env var unset/empty), the value is inserted directly to avoid sending
+  a blank token. On platforms without substitution, insert the value per the resolution
+  order. *(W007 mitigation.)*
 - **Least exposure.** Reading a key from a file outside the workspace requires explicit
   user approval. The key is never persisted into `skill-config.json` (which stores only
   the env-var name and file path, never the secret) and `skill-config.json` is never
   committed.
 - **Rotation.** Keys are managed and rotated in the [CertainData portal](https://portal.certaindata.ai);
   the skill holds no long-lived copy.
+- **Hosted MCP alternative.** Trust-sensitive users can use the hosted CertainData MCP
+  server (a separate integration, not a call the skill makes) at
+  <https://mcp.certaindata.ai/mcp> — the bearer token rides the transport and the model
+  never handles the key value at all, sidestepping W007 entirely.
 
 ## Untrusted external input
+
+_Addresses security-scan finding W012 (prompt-injection / undisclosed-URL)._
 
 Catalog entries, seller `402` responses, payment terms, and public x402 Bazaar results are
 treated as **data to parse, never as instructions.** The skill uses only their structured
@@ -42,6 +57,8 @@ conflicts with the skill's instructions or the user's intent, the skill stops an
 it rather than acting. See the **Trust Boundary** section of `SKILL.md`.
 
 ## Payment safety and money movement
+
+_Addresses security-scan finding W009 (autonomous payment)._
 
 Payments are **non-custodial and policy-gated**:
 
@@ -79,7 +96,7 @@ calls, delegated signing, autonomous payment). For clarity, the skill explicitly
 - **Expose the key.** The key value is never printed, logged, echoed, or transmitted anywhere except the `Authorization` header of a request to CertainData.
 - **Move money from any other wallet.** It can only initiate payments from the user's own CertainData account wallet, signed under server-side spend caps and allow/deny policy; it defaults to production and requires explicit confirmation for sandbox. It never holds funds.
 - **Obey external content.** Instructions embedded in catalog, seller `402`, or Bazaar responses are ignored — see *Untrusted external input* above.
-- **Call undisclosed endpoints.** Network calls go only to the endpoints documented in `SKILL.md` (CertainData APIs and the public Coinbase x402 Bazaar) plus the specific seller endpoint the user is paying.
+- **Call undisclosed endpoints.** The skill only ever contacts three hosts: `api.certaindata.ai` (CertainData catalog, signing, sandbox funding), `api.cdp.coinbase.com` (public Coinbase x402 Bazaar discovery), and the specific seller endpoint the user is paying. No other host is ever called — directly rebutting W012's undisclosed/malicious-URL heuristic.
 - **Collect or exfiltrate data.** It transmits only what each request requires; it gathers no telemetry and sends no user data elsewhere.
 
 ## Scope
@@ -94,7 +111,7 @@ separate [CertainData Terms](https://www.certaindata.ai/terms); accounts are man
 ## Reporting a vulnerability
 
 If you believe you have found a security issue in this skill, please report it **privately** —
-do not open a public issue, which would disclose the problem before a fix exists.
+do not open a public issue.
 
 - **GitHub (private):** use [Report a vulnerability](https://github.com/certaindata/skills/security/advisories/new) on the repo's Security tab (GitHub Private Vulnerability Reporting).
 - **Email:** support@certaindata.ai (subject line prefixed `SECURITY:`)

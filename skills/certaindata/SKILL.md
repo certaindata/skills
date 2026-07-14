@@ -295,7 +295,7 @@ Authorization: Bearer [the resolved API key]
 Content-Type: application/json
 ```
 
-Substitute the **resolved API key** — from the environment variable named in `secret.env_var`, or read from `secret.env_file` per the bootstrap (see Entry Point Step 2) — into the `Authorization` header at call time. **Never display, echo, or log the key value** — not in your responses, not in tool output, not anywhere.
+Substitute the **resolved API key** — from the environment variable named in `secret.env_var`, or read from `secret.env_file` per the bootstrap (see Entry Point Step 2) — into the `Authorization` header at call time. **Where your agent platform supports environment-variable substitution and the key was resolved from the environment variable (Step 2 fast path), pass the header as a reference — `Authorization: Bearer ${<secret.env_var>}` (e.g. `Bearer ${CERTAINDATA_API_KEY}`) — so the platform resolves it at send time and the raw value never enters your output.** If the key was resolved from `secret.env_file` (env var unset/empty), insert the resolved value directly — a `${VAR}` reference would resolve to empty and send a blank bearer token. On platforms without substitution, insert the resolved value per Entry Point Step 2. **Never display, echo, or log the key value** — not in your responses, not in tool output, not anywhere.
 
 **Body:**
 
@@ -566,7 +566,7 @@ Spend controls and endpoint allow/deny lists are not stored in `skill-config.jso
 >
 > [CONFIRMED_VAR_NAME]=your-actual-certaindata-api-key-here
 >
-> Then restart your agent gateway and invoke this skill again — it will proceed automatically. Your spend controls (per-call, daily, and monthly caps), trust-tier preferences, and endpoint allow/deny lists are managed in your CertainData portal at https://portal.certaindata.ai."
+> Then load [CONFIRMED_VAR_NAME] into your environment (if you don't, the skill falls back to reading it from [CONFIRMED_PATH]), restart your agent gateway, and invoke this skill again — it will proceed automatically. Your spend controls (per-call, daily, and monthly caps), trust-tier preferences, and endpoint allow/deny lists are managed in your CertainData portal at https://portal.certaindata.ai."
 
 **Halt here.** Do not attempt any API calls during first run setup.
 

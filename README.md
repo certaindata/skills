@@ -95,7 +95,7 @@ Look up BIN 424242
 
 ### Updating
 
-Run `npx skills update` to upgrade to the latest version. Your local `skill-config.json` (mode, API-key reference, environment preference) is preserved across updates.
+Run `npx skills update` to upgrade to the latest version. The CLI wipes and recreates the skill directory on update, so your local `skill-config.json` (mode, API-key reference, environment preference) — which lives in that directory — is cleared. The skill re-runs its First-Run setup interview on the next invocation. Your API key is unaffected as long as its env file sits outside the skill directory — which the default (`~/.env`) does, so it survives the update and never needs re-entering. Keep the env file outside the skill directory: if you point it inside, it is wiped along with everything else on update.
 
 ### Mode configuration reference
 
