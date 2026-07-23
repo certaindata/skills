@@ -295,6 +295,8 @@ Authorization: Bearer [the resolved API key]
 Content-Type: application/json
 ```
 
+**When `[ENVIRONMENT]` is `sandbox`, also send `X-AgentPay-Sandbox: true` on this sign call** — matching the header sent to the seller. In production, omit it.
+
 Substitute the **resolved API key** — from the environment variable named in `secret.env_var`, or read from `secret.env_file` per the bootstrap (see Entry Point Step 2) — into the `Authorization` header at call time. **Where your agent platform supports environment-variable substitution and the key was resolved from the environment variable (Step 2 fast path), pass the header as a reference — `Authorization: Bearer ${<secret.env_var>}` (e.g. `Bearer ${CERTAINDATA_API_KEY}`) — so the platform resolves it at send time and the raw value never enters your output.** If the key was resolved from `secret.env_file` (env var unset/empty), insert the resolved value directly — a `${VAR}` reference would resolve to empty and send a blank bearer token. On platforms without substitution, insert the resolved value per Entry Point Step 2. **Never display, echo, or log the key value** — not in your responses, not in tool output, not anywhere.
 
 **Body:**
@@ -689,6 +691,6 @@ If the user asks to reconfigure the skill or change the API key reference:
 | Not configured | Missing | — | Run First Run Interview (Q1 → mode selection) |
 | certaindata_flow, key unresolved | Present | certaindata_flow | Try env var, then read `secret.env_file`; only if neither yields the key → Run Missing Key Instructions |
 | certaindata_flow, ready (production) | Present | certaindata_flow + key present | Build request → probe seller → `POST /buyers/signatures` → retry with the payment header → surface result |
-| certaindata_flow, sandbox (`sandboxAvailable: true` service) | Present | certaindata_flow + key present | Environment Selection picks sandbox → fund test wallet (`POST /sandbox/wallet-fundings`, once/session; `429`=cooldown, `409`=no wallet) → probe `url + path` with `X-AgentPay-Sandbox: true` → `POST /buyers/signatures` (Base Sepolia USDC) → retry → surface result |
+| certaindata_flow, sandbox (`sandboxAvailable: true` service) | Present | certaindata_flow + key present | Environment Selection picks sandbox → fund test wallet (`POST /sandbox/wallet-fundings`, once/session; `429`=cooldown, `409`=no wallet) → probe `url + path` with `X-AgentPay-Sandbox: true` → `POST /buyers/signatures` with `X-AgentPay-Sandbox: true` (Base Sepolia USDC) → retry → surface result |
 | catalog_only, ready | Present | catalog_only | Match service → Environment Selection → surface request blueprint + payment terms (production or sandbox/Sepolia) → halt |
 | catalog_only + arbitrary endpoint request | Present | catalog_only | Tell human CertainData is not configured to orchestrate x402 payments; offer reconfigure; hand payment back to the agent's own x402 wallet/tool |
