@@ -68,7 +68,7 @@ Download `SKILL.md` and place it in your agent platform's skills directory (see 
    ```
    Once configured, the skill matches the query to a catalog service — in `certaindata_flow` it completes the paid call and returns the result with on-chain settlement details; in `catalog_only` it hands back the request blueprint and payment terms for you to pay yourself.
 
-To change your mode or any setting later, ask your agent to `Reconfigure CertainData` — this clears the config and re-runs the interview from the start.
+To change your mode or any setting later, ask your agent to `Reconfigure CertainData` — it keeps your existing settings and lets you change only the one(s) you want, or optionally change multiple.
 
 ### Quick Start (AI Agent)
 
