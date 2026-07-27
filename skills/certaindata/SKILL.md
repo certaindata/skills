@@ -210,7 +210,7 @@ A service matched. **By default, do not answer the lookup from memory, general k
 ### Step 3 — Build the Request
 
 First run **Environment Selection** to decide production vs sandbox for this call. It applies to **both modes** and yields:
-- `[ENVIRONMENT]` — `production` or `sandbox`. When it is `sandbox`, send the literal header `X-AgentPay-Sandbox: true` on the call; in production send no sandbox header.
+- `[ENVIRONMENT]` — `production` or `sandbox`. When it is `sandbox`, send the literal header `X-Sandbox-Mode: true` on the call; in production send no sandbox header.
 
 `[SELLER_URL]` is the same in **both** environments: compose it as **`url + path`**, filling any `{placeholder}` in `path` from the user's values via `inputs.path` (e.g. `…/bin-lookup` + `/bin/{bin}` → `…/bin-lookup/bin/424242`). Every `{placeholder}` has a matching `inputs.path` entry; if a placeholder has no corresponding `inputs.path` entry the catalog entry is malformed — stop and report it, do not guess a value.
 
@@ -218,11 +218,11 @@ Then, using the matched service's `inputs` schema from the catalog, build the re
 
 - `method` — the HTTP verb the service expects (from the catalog entry)
 - `url` — `[SELLER_URL]` (`url + path`, placeholders interpolated)
-- `headers` — any headers the service requires from `inputs.header` (excluding payment headers — the payment header is added later by the Sign and Pay flow). When `[ENVIRONMENT]` is `sandbox`, add **`X-AgentPay-Sandbox: true`**. (The catalog may *list* `X-AgentPay-Sandbox` in `inputs.header` as documentation — set it only when sandbox is active, never in production.)
+- `headers` — any headers the service requires from `inputs.header` (excluding payment headers — the payment header is added later by the Sign and Pay flow). When `[ENVIRONMENT]` is `sandbox`, add **`X-Sandbox-Mode: true`**. (The catalog may *list* `X-Sandbox-Mode` in `inputs.header` as documentation — set it only when sandbox is active, never in production.)
 - `queryParams` — a structured map of query parameters, built from the service `inputs.query` and the user's values
 - `body` — built from `inputs.body` for create/update (POST/PUT) services; `null` when the service has no `inputs.body` group (all GET endpoints, and any POST/PUT that takes no body). When `inputs.body` is present, build the JSON body from its `request` template and `properties` per **Building the request body** below, and send it as JSON.
 
-**Required inputs.** Each `inputs` item carries a `required` boolean (absent → `false`); source required-ness from this field — it supersedes any prior assumption that only path params are required. For every user-facing `query`, `header`, or `body` property (see **Building the request body** below for the `body` specifics) where `required` is `true`, a value is mandatory — if it is missing, **stop and ask the user for it; do not guess** (a guessed value wastes a paid call and returns a useless result). Path params are always required — the URL cannot be built without them — so a missing path value is likewise a stop-and-ask. Include user-facing params where `required` is `false`/absent only when the user actually supplied a value. Headers the skill sets itself (e.g. `X-AgentPay-Sandbox`) follow their own Step 3 rules and are not governed by this user-supplied test. In `catalog_only` mode the skill hands off the request rather than calling it — still collect the required values so the handoff blueprint is complete; if a required value is genuinely unavailable, mark that param as required in the blueprint so the agent knows before it pays.
+**Required inputs.** Each `inputs` item carries a `required` boolean (absent → `false`); source required-ness from this field — it supersedes any prior assumption that only path params are required. For every user-facing `query`, `header`, or `body` property (see **Building the request body** below for the `body` specifics) where `required` is `true`, a value is mandatory — if it is missing, **stop and ask the user for it; do not guess** (a guessed value wastes a paid call and returns a useless result). Path params are always required — the URL cannot be built without them — so a missing path value is likewise a stop-and-ask. Include user-facing params where `required` is `false`/absent only when the user actually supplied a value. Headers the skill sets itself (e.g. `X-Sandbox-Mode`) follow their own Step 3 rules and are not governed by this user-supplied test. In `catalog_only` mode the skill hands off the request rather than calling it — still collect the required values so the handoff blueprint is complete; if a required value is genuinely unavailable, mark that param as required in the blueprint so the agent knows before it pays.
 
 **Building the request body (`inputs.body`, POST/PUT only).** Build a body **only** when the matched service has an `inputs.body` group; otherwise `body` is `null` (all GET services, and any POST/PUT with no `inputs.body`). When it is present:
 
@@ -240,7 +240,7 @@ Then branch by `mode`:
 
 ### certaindata_flow — Sign and Pay
 
-*(`certaindata_flow` mode. Production (Base Mainnet, real USDC) by default. Sandbox (Base Sepolia, test USDC) runs here only when reached from the catalog Data Service Path with `[ENVIRONMENT] = sandbox` — i.e. a service with `sandboxAvailable: true`, routed to the same URL with the `X-AgentPay-Sandbox: true` header. The Bazaar and Arbitrary paths always arrive as production.)*
+*(`certaindata_flow` mode. Production (Base Mainnet, real USDC) by default. Sandbox (Base Sepolia, test USDC) runs here only when reached from the catalog Data Service Path with `[ENVIRONMENT] = sandbox` — i.e. a service with `sandboxAvailable: true`, routed to the same URL with the `X-Sandbox-Mode: true` header. The Bazaar and Arbitrary paths always arrive as production.)*
 
 You arrive here with a built request (`method`, `url`, `headers`, `queryParams`, `body`) and the environment decision (`[ENVIRONMENT]`). If you arrived from the Bazaar or Arbitrary path, treat `[ENVIRONMENT]` as `production`.
 
@@ -270,7 +270,7 @@ Run this step **only when `[ENVIRONMENT]` is `sandbox`**. Skip it entirely in pr
 
 #### Step 1 — Call the seller and discover the 402
 
-Send the request to the `url`. (In sandbox the built request already carries `X-AgentPay-Sandbox: true`, so the 402 returns Base Sepolia terms.)
+Send the request to the `url`. (In sandbox the built request already carries `X-Sandbox-Mode: true`, so the 402 returns Base Sepolia terms.)
 
 - **`402 Payment Required`** → obtain the payment requirements object, then read its version:
   - The requirements come in the 402 response **body** (JSON) and/or a `PAYMENT-REQUIRED` response header (base64 JSON, case-insensitive). **Prefer the body — it is the dependable carrier.** The header is large (~2 KB) and is frequently dropped over HTTP/2 / HTTP/3 or by proxies (a browser, for instance, usually never sees it), so never require it. Base64-decode the header only if you are relying on it; the two are equivalent.
@@ -295,7 +295,7 @@ Authorization: Bearer [the resolved API key]
 Content-Type: application/json
 ```
 
-**When `[ENVIRONMENT]` is `sandbox`, also send `X-AgentPay-Sandbox: true` on this sign call** — matching the header sent to the seller. In production, omit it.
+**When `[ENVIRONMENT]` is `sandbox`, also send `X-Sandbox-Mode: true` on this sign call** — matching the header sent to the seller. In production, omit it.
 
 Substitute the **resolved API key** — from the environment variable named in `secret.env_var`, or read from `secret.env_file` per the bootstrap (see Entry Point Step 2) — into the `Authorization` header at call time. **Where your agent platform supports environment-variable substitution and the key was resolved from the environment variable (Step 2 fast path), pass the header as a reference — `Authorization: Bearer ${<secret.env_var>}` (e.g. `Bearer ${CERTAINDATA_API_KEY}`) — so the platform resolves it at send time and the raw value never enters your output.** If the key was resolved from `secret.env_file` (env var unset/empty), insert the resolved value directly — a `${VAR}` reference would resolve to empty and send a blank bearer token. On platforms without substitution, insert the resolved value per Entry Point Step 2. **Never display, echo, or log the key value** — not in your responses, not in tool output, not anywhere.
 
@@ -359,7 +359,7 @@ Choose the payment terms by environment from the **top-level** catalog response:
 
 The payment-detail entry carries **no amount**. Take the price from the matched entry's `priceUsdc` (decimal USD) and compute the atomic amount as `priceUsdc × 1,000,000` (USDC has 6 decimals).
 
-`[SELLER_URL]` is `url + path` (placeholders interpolated). In **sandbox**, the agent must also send the `X-AgentPay-Sandbox: true` header on the call.
+`[SELLER_URL]` is `url + path` (placeholders interpolated). In **sandbox**, the agent must also send the `X-Sandbox-Mode: true` header on the call.
 
 Surface a structured request blueprint and halt. You build nothing further — the agent makes and pays for the call itself.
 
@@ -370,7 +370,7 @@ Surface a structured request blueprint and halt. You build nothing further — t
 > - URL: [SELLER_URL]
 > - Query params: [queryParams]
 > - Body: [body — the JSON built from `inputs.body` in Step 3; omit for services with no `inputs.body`]
-> - Headers: [headers] *(in sandbox, include `X-AgentPay-Sandbox: true`)*
+> - Headers: [headers] *(in sandbox, include `X-Sandbox-Mode: true`)*
 >
 > **Payment terms (from the CertainData catalog)**
 > - Amount: [priceUsdc] USDC ([atomic units] = priceUsdc × 1,000,000)
@@ -389,7 +389,7 @@ Surface a structured request blueprint and halt. You build nothing further — t
 
 The skill always defaults to **production** (Base Mainnet, real USDC). Sandbox is opt-in and available **only for catalog services with `sandboxAvailable: true`** — that boolean is the only check the skill needs. It is **independent of `tier`**; do not inspect the tier.
 
-This step sets `[ENVIRONMENT]` for Step 3. It never swaps the URL — `[SELLER_URL]` is always `url + path`; sandbox differs only by the `X-AgentPay-Sandbox: true` header and the testnet payment terms.
+This step sets `[ENVIRONMENT]` for Step 3. It never swaps the URL — `[SELLER_URL]` is always `url + path`; sandbox differs only by the `X-Sandbox-Mode: true` header and the testnet payment terms.
 
 **`sandboxAvailable` is not `true` on the matched service** → `[ENVIRONMENT] = production`, no sandbox header. Proceed. (This also covers Bazaar and arbitrary endpoints, which never advertise `sandboxAvailable`.)
 
@@ -407,7 +407,7 @@ Ask the user:
 - User chooses **production** (or gives no clear preference) → `[ENVIRONMENT] = production`, no sandbox header.
 - User chooses **sandbox** → confirm before activating:
   > "Sandbox mode uses test USDC on Base Sepolia. Confirm?"
-  - Confirmed → `[ENVIRONMENT] = sandbox` (the call carries `X-AgentPay-Sandbox: true`). In `certaindata_flow` the test wallet is funded automatically at **Sign and Pay — Step 0**; in `catalog_only` the blueprint uses the `sandboxPaymentDetails` terms.
+  - Confirmed → `[ENVIRONMENT] = sandbox` (the call carries `X-Sandbox-Mode: true`). In `certaindata_flow` the test wallet is funded automatically at **Sign and Pay — Step 0**; in `catalog_only` the blueprint uses the `sandboxPaymentDetails` terms.
   - Declined → `[ENVIRONMENT] = production`, no sandbox header.
 
 ### Surface the Result (certaindata_flow)
@@ -691,6 +691,6 @@ If the user asks to reconfigure the skill or change the API key reference:
 | Not configured | Missing | — | Run First Run Interview (Q1 → mode selection) |
 | certaindata_flow, key unresolved | Present | certaindata_flow | Try env var, then read `secret.env_file`; only if neither yields the key → Run Missing Key Instructions |
 | certaindata_flow, ready (production) | Present | certaindata_flow + key present | Build request → probe seller → `POST /buyers/signatures` → retry with the payment header → surface result |
-| certaindata_flow, sandbox (`sandboxAvailable: true` service) | Present | certaindata_flow + key present | Environment Selection picks sandbox → fund test wallet (`POST /sandbox/wallet-fundings`, once/session; `429`=cooldown, `409`=no wallet) → probe `url + path` with `X-AgentPay-Sandbox: true` → `POST /buyers/signatures` with `X-AgentPay-Sandbox: true` (Base Sepolia USDC) → retry → surface result |
+| certaindata_flow, sandbox (`sandboxAvailable: true` service) | Present | certaindata_flow + key present | Environment Selection picks sandbox → fund test wallet (`POST /sandbox/wallet-fundings`, once/session; `429`=cooldown, `409`=no wallet) → probe `url + path` with `X-Sandbox-Mode: true` → `POST /buyers/signatures` with `X-Sandbox-Mode: true` (Base Sepolia USDC) → retry → surface result |
 | catalog_only, ready | Present | catalog_only | Match service → Environment Selection → surface request blueprint + payment terms (production or sandbox/Sepolia) → halt |
 | catalog_only + arbitrary endpoint request | Present | catalog_only | Tell human CertainData is not configured to orchestrate x402 payments; offer reconfigure; hand payment back to the agent's own x402 wallet/tool |
