@@ -15,15 +15,15 @@ capabilities; the sections below are the intended mitigations for them.
 
 ## Current scan status
 
-Independent skill-security scanners audit the published skill. The most recent audits (2026-07-16):
+Independent skill-security scanners audit the published skill. The most recent audits (2026-07-29):
 
 | Scanner | Verdict | What it flags |
 |---|---|---|
 | Gen Agent Trust Hub | Pass | — |
-| Socket | Warn (medium) | Performs real financial actions, reads a local secret file, and defaults into paid catalog calls without a mandatory per-spend confirmation. |
-| Snyk | Fail (high) | **W007** — insecure credential handling (high). **W009** — direct money-access capability (medium). |
+| Socket | Medium overall; one **Anomaly** alert (low, 83% confidence) | Reads a local secret file, forwards the live API key to CertainData, and cannot independently verify the payment-signing endpoints. Socket assesses this as a high-trust financial integration rather than malware. |
+| Snyk | Fail (high, driven by W007) | **W007** — insecure credential handling (high). **W009** — direct money-access capability (medium). **W011** — exposure to third-party seller content (medium). |
 
-These verdicts describe the skill's *intended capabilities*, not defects: credential handling, external calls, delegated signing, and autonomous payment are the product. Each is governed by a control below — **W007** under **Credential handling**, **W009** under **Payment safety and money movement**, and the Socket observation under **Autonomous payment and per-spend confirmation**.
+These verdicts describe the skill's *intended capabilities*, not malware: credential handling, external calls, delegated signing, and autonomous payment are the product. The named Snyk findings and Socket's Anomaly alert map to controls below — **W007** under **Credential handling**, **W009** under **Payment safety and money movement**, **W011** under **Untrusted external input**, and Socket's **Anomaly** under **Endpoint authenticity and credential destination** (with its local-file concern also covered by **Credential handling**).
 
 ---
 
@@ -38,7 +38,8 @@ deliberately constrained:
   unset, the key line in the configured env file (`secret.env_file`). A blank value is
   treated as absent — the skill never sends an empty bearer token.
 - **Never emitted.** The key value is used only to build the `Authorization` header for a
-  request to CertainData. It is **never printed, echoed, logged, or written back** to any
+  request to its issuer, `api.certaindata.ai`. It is never sent to a seller, Coinbase, or
+  any other third party, and is **never printed, echoed, logged, or written back** to any
   file, prompt, or tool output.
 - **Passed by reference where possible.** On agent platforms that support env-var
   substitution AND when the key was resolved from the environment variable, the
@@ -58,17 +59,49 @@ deliberately constrained:
   <https://mcp.certaindata.ai/mcp> — the bearer token rides the transport and the model
   never handles the key value at all, sidestepping W007 entirely.
 
+## Endpoint authenticity and credential destination
+
+_Addresses the current Socket **Anomaly** alert (low, 83% confidence; overall scanner risk Medium)._
+
+- **Published destinations.** `SKILL.md`'s endpoint table publishes the fixed HTTPS URLs
+  for CertainData and Coinbase Bazaar calls. The only other destination is the specific
+  HTTPS seller URL selected from the CertainData catalog, the public Bazaar, or supplied
+  by the user; the skill does not discover or call any undisclosed intermediary.
+- **TLS identity.** Every call uses HTTPS and is limited to the published destination for
+  that step. As an instruction-only artifact, the skill cannot independently attest the
+  implementation behind those TLS endpoints; Socket correctly surfaces that trust boundary.
+- **Credential scoping.** The CertainData API key is sent only to `api.certaindata.ai`, its
+  issuer. Coinbase discovery calls and seller calls never receive it. Sellers receive only
+  the request data they require and, on a paid retry, the x402 payment header.
+
+Socket describes this as a high-trust financial integration rather than malware. The alert
+reflects the unavoidable trust placed in the published signing service and its credential
+handling, not a hidden endpoint or an undisclosed credential destination.
+
 ## Untrusted external input
 
-_Standing control against prompt-injection and undisclosed / malicious-URL abuse._
+_Addresses security-scan finding W011 (third-party content exposure) and prompt-injection risk._
 
 Catalog entries, seller `402` responses, payment terms, and public x402 Bazaar results are
-treated as **data to parse, never as instructions.** The skill uses only their structured
-fields (URLs, amounts, networks, schemas, `accepts[]`) and does not act on natural-language
-directives embedded in a response — including any attempt to change an endpoint, raise an
-amount, skip a confirmation, exfiltrate the key, or bypass a spend cap. When a response
-conflicts with the skill's instructions or the user's intent, the skill stops and surfaces
-it rather than acting. See the **Trust Boundary** section of `SKILL.md`.
+treated as **data to parse, never as instructions.** For a seller `402`, the skill uses the
+closed forwarding allowlist in `SKILL.md`. The selected seller `network` value is forwarded
+unchanged. V1 `maxAmountRequired` is sent to the sign endpoint as `amount`.
+Unrecognised fields are discarded and never influence a decision, enter a later
+request, or persist. Seller-provided resource descriptions, `extra.name`, and free-text errors
+are untrusted strings: they never drive selection or reasoning and, if shown, are clearly
+attributed and delimited as seller text. A contract-required resource description may be
+copied into its named sign-request field; it and `extra.name` may otherwise be shown only
+under the attribution and delimiting rule above. Seller error text is not forwarded.
+
+The skill does not act on natural-language directives embedded in a response — including
+any attempt to change an endpoint, raise an amount, skip a confirmation, exfiltrate the key,
+or bypass a spend cap. When a response conflicts with the skill's instructions or the user's
+intent, the skill stops and surfaces it rather than acting. See the **Trust Boundary** section
+of `SKILL.md`.
+
+W011 is inherent to the x402 flow because the seller's `402` payment requirements must be
+read before a payment can be formed. Forwarding the full `accepts[]` list would not remove
+that exposure.
 
 ## Payment safety and money movement
 
@@ -95,26 +128,12 @@ Payments are **non-custodial and policy-gated**:
 - **Production by default.** All calls default to production (Base Mainnet). Sandbox (test
   USDC on Base Sepolia) is opt-in per catalog service and requires explicit user
   confirmation each time.
+- **Asset selection.** The sign endpoint filters `accepts[]` to USDC server-side. The skill
+  narrows the list first to save an unnecessary signing round trip.
 - **No double payment.** On a transport retry the skill resends the *same* signed payment
   header; it re-signs only after the authorization window has lapsed.
 - **No buyer fee.** CertainData charges the buyer nothing — the buyer pays only the
   seller's price.
-
-## Autonomous payment and per-spend confirmation
-
-_Addresses the Socket audit's medium alert (real financial actions, local secret-file read, and paid calls without a mandatory per-spend confirmation)._
-
-- **Financial actions are governed, not ungoverned.** Every payment is non-custodial and
-  authorized server-side against the user's spend caps and allow/deny lists (see **Payment
-  safety and money movement** above). The skill holds no standing spend authority and
-  cannot spend beyond what the user has permitted on their CertainData account.
-- **Secret-file read is constrained.** The skill reads only the configured env file to
-  resolve the API key, and reading a path outside the workspace requires explicit user
-  approval (see **Credential handling** above). It reads no other local files.
-- **Per-spend confirmation.** Spend is currently gated by server-side caps and allow/deny
-  policy rather than a mandatory per-call confirmation prompt inside the skill. Whether to
-  add an explicit per-spend confirmation is under separate review; any change will be
-  reflected here and in `SKILL.md`.
 
 ## What this skill does not do
 
@@ -123,10 +142,11 @@ calls, delegated signing, autonomous payment). For clarity, the skill explicitly
 
 - **Execute code.** It is instruction-only — no bundled scripts, no subprocess, no shell. Every action is a plain HTTP request the agent makes directly.
 - **Read arbitrary files.** It reads only the configured env file to resolve the API key; a path outside the workspace requires explicit user approval.
-- **Expose the key.** The key value is never printed, logged, echoed, or transmitted anywhere except the `Authorization` header of a request to CertainData.
+- **Expose the key.** The key value is never printed, logged, echoed, or transmitted anywhere except the `Authorization` header of a request to its issuer, `api.certaindata.ai`; it is never sent to a seller or third party.
 - **Move money from any other wallet.** It can only initiate payments from the user's own CertainData account wallet, signed under server-side spend caps and allow/deny policy; it defaults to production and requires explicit confirmation for sandbox. It never holds funds.
 - **Obey external content.** Instructions embedded in catalog, seller `402`, or Bazaar responses are ignored — see *Untrusted external input* above.
-- **Call undisclosed endpoints.** The skill only ever contacts three hosts: `api.certaindata.ai` (CertainData catalog, signing, sandbox funding), `api.cdp.coinbase.com` (public Coinbase x402 Bazaar discovery), and the specific seller endpoint the user is paying. No other host is ever called — closing off any undisclosed / malicious-URL vector.
+- **Forward unrecognised seller fields.** Seller `402` fields outside the closed x402/sign-contract allowlist are not acted on, forwarded, or persisted.
+- **Call undisclosed endpoints.** The skill's endpoint table publishes the fixed HTTPS CertainData and Coinbase URLs. The only other destination is the specific HTTPS seller endpoint selected for the user's request. No intermediary or other host is called — closing off any undisclosed / malicious-URL vector.
 - **Collect or exfiltrate data.** It transmits only what each request requires; it gathers no telemetry and sends no user data elsewhere.
 
 ## Scope
